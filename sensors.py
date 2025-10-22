@@ -11,9 +11,18 @@ MAX31856_LTCBH_REG = 0x0C
 MAX31856_SR_REG = 0x0F
 
 # MAX31856 Configuration
-MAX31856_CR0_AUTOCONVERT = 0x80  # Automatic conversion mode
-MAX31856_CR1_AVGSEL1 = 0x00      # 1 sample averaging
-MAX31856_CR1_TYPE_K = 0x03       # K-type thermocouple
+MAX31856_CR0_AUTOCONVERT = 0x80	# Automatic conversion mode
+MAX31856_CR1_AVGSEL1 = 0x00		# 1 sample averaging
+MAX31856_CR1_TYPE_K = 0x03		# K-type thermocouple
+
+# ADS1118 Configuration
+ADS1118_SS = 0x8000				# Start single conversion
+ADS1118_PGA_256 = 0x0A00		# 0.256V range
+ADS1118_MODE_SINGLE = 0x0100	# Single-shot mode
+ADS1118_DR_860SPS = 0x00E0		# 860 samples per second
+ADS1118_TS_MODE_ADC = 0x0000	# ADC mode
+ADS1118_NOP = 0x0002			# Valid data, no operation
+
 
 class MAX31856:    
     def __init__(self, spi, cs_pin):
@@ -59,48 +68,72 @@ class MAX31856:
         data = self._read_registers(MAX31856_SR_REG, 1)
         return data[0]
 
+
+class ADS1118:
+    def __init__(self, spi, cs_pin):
+        self.spi = spi
+        self.cs = Pin(cs_pin, Pin.OUT)
+        self.cs.value(1)  # Active low
+
+    def read_channel(self, channel):
+        if channel < 0 or channel > 3:
+            return None
+
+        # MUX bits: 0x4000=AIN0, 0x5000=AIN1, 0x6000=AIN2, 0x7000=AIN3
+        mux = 0x4000 + (channel << 12)
+        config = (ADS1118_SS | mux | ADS1118_PGA_256 | ADS1118_MODE_SINGLE | ADS1118_DR_860SPS | ADS1118_TS_MODE_ADC | ADS1118_NOP)
+        config_bytes = struct.pack('>H', config)
+
+        self.cs.value(0)
+        self.spi.write(config_bytes)
+        self.cs.value(1)
+
+        time.sleep_ms(2) # Wait for conversion
+
+        result = bytearray(2)
+        self.cs.value(0)
+        self.spi.write_readinto(config_bytes, result)
+        self.cs.value(1)
+
+        # Convert to signed 16-bit integer
+        raw_value = struct.unpack('>h', result)[0]
+
+        # Convert to voltage
+        voltage = raw_value * 0.256 / 32768.0
+        return voltage
+
+    def read_pressure(self, channel):
+        return self.read_channel(channel)
+
+
 class SensorManager:
     def __init__(self):
         self.spi = SPI(0, baudrate=2_000_000, polarity=0, phase=1, sck=Pin(2), mosi=Pin(3), miso=Pin(9))
         
         self.thermocouples = [
-            MAX31856(self.spi, cs_pin=12),  # TC1
-            MAX31856(self.spi, cs_pin=13),  # TC2
-            MAX31856(self.spi, cs_pin=14),  # TC3
-            MAX31856(self.spi, cs_pin=15),  # TC4
+            MAX31856(self.spi, cs_pin=12),
+            MAX31856(self.spi, cs_pin=13),
+            MAX31856(self.spi, cs_pin=14),
+            MAX31856(self.spi, cs_pin=15),
         ]
+        
+        self.pressure_adc = ADS1118(self.spi, cs_pin=17)
     
-    def read_temperatures(self):
-        temps = []
-        for i, tc in enumerate(self.thermocouples):
-            temp = tc.read_temperature()
-            temps.append(temp)
-        return temps
+    def read_all_temperatures(self):
+        return [tc.read_temperature() for tc in self.thermocouples]
+    
+    def read_temperature(self, channel):
+        return self.thermocouples[channel].read_temperature()
+    
+    def read_all_pressures(self):
+        return [self.pressure_adc.read_pressure(channel) for channel in range(4)]
+    
+    def read_pressure(self, channel):
+        return self.pressure_adc.read_pressure(channel)
     
     def read_sensors(self):
         return {
             'temperatures': self.read_all_temperatures(),
+            'pressures': self.read_all_pressures(),
             'timestamp': time.ticks_ms()
         }
-        
-def test_sensors():
-    sensors = SensorManager()
-    
-    print("Starting sensor test (2 Hz sampling)")
-    
-    try:
-        while True:
-            data = sensors.read_all_sensors()
-            
-            print(f"[{data['timestamp']}ms]")
-            print(f"  Temps (°C): {data['temperatures']}")
-            print()
-            
-            time.sleep(0.5)  # 2 Hz = 0.5 second delay
-            
-    except KeyboardInterrupt:
-        print("\nTest stopped")
-
-
-if __name__ == "__main__":
-    test_sensors()
