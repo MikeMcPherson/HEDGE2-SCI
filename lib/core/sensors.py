@@ -1,0 +1,37 @@
+# HEDGE-2 SCI Board - Sensor Interface
+
+import time
+from machine import SPI, Pin
+from lib.drivers import MAX31856, ADS1118
+
+
+class SensorManager:
+    def __init__(self):
+        self.spi = SPI(0, baudrate=2_000_000, polarity=0, phase=1, sck=Pin(2), mosi=Pin(3), miso=Pin(16))
+        
+        self.thermocouples = [
+            MAX31856(self.spi, cs_pin=12),
+            MAX31856(self.spi, cs_pin=13),
+            MAX31856(self.spi, cs_pin=14),
+            MAX31856(self.spi, cs_pin=15),
+        ]
+        
+        self.pressure_adc = ADS1118(self.spi, cs_pin=17)
+    
+    def read_all_temperatures(self):
+        return [tc.read_temperature() for tc in self.thermocouples]
+    
+    def read_temperature(self, channel):
+        return self.thermocouples[channel].read_temperature()
+    
+    def read_all_pressures(self):
+        return [self.pressure_adc.read_pressure(channel) for channel in range(4)]
+    
+    def read_pressure(self, channel):
+        return self.pressure_adc.read_pressure(channel)
+    
+    def read_sensors(self):
+        timestamp = time.ticks_ms() & 0xFFFFFFFF
+        temperatures = self.read_all_temperatures()
+        pressures = self.read_all_pressures()
+        return timestamp, temperatures, pressures
