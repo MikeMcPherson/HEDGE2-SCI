@@ -1,3 +1,5 @@
+# HEDGE-2 SCI Board - Buffer Interface
+
 import time
 import struct
 
