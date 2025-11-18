@@ -7,11 +7,13 @@ from comms import RS485, SpaceCAN, CLI
 from core import SensorManager, HousekeepingManager, Buffer
 
 thread_lock = _thread.allocate_lock()
+interval_ms = 500  # 2 Hz
 
 
 def sensor_acquisition(sensors, housekeeping, buffer):
     """Sensor + Housekeeping acquisition, stores latest sample."""
     while True:
+        start = time.ticks_ms()
         timestamp1, temperatures, pressures = sensors.read_sensors()
         timestamp2, ina238_data, hk_temperatures = housekeeping.read_all_housekeeping_data()
         voltages, currents, powers, ina_temps = map(list, zip(*ina238_data))
@@ -30,7 +32,9 @@ def sensor_acquisition(sensors, housekeeping, buffer):
 
         gc.collect()
 
-        time.sleep_ms(500)
+        elapsed = time.ticks_diff(time.ticks_ms(), start)
+        sleep_time = max(0, interval_ms - elapsed)
+        time.sleep_ms(sleep_time)
 
 
 def communications(sensors, housekeeping, buffer):
@@ -42,6 +46,7 @@ def communications(sensors, housekeeping, buffer):
         sample = None
         with thread_lock:
             sample = buffer.get_all()
+            sample = utils.buffer_crc16(sample)
 
         if sample:
             comms.send(sample)
@@ -75,3 +80,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
