@@ -27,10 +27,3 @@ class RS485:
             print(f"RS485 Received: {data}")
             return data
         return None
-
-
-if __name__ == '__main__':
-    rs485 = RS485()
-    rs485.send("Hello RS485")
-    time.sleep(0.5)
-    rs485.receive()
