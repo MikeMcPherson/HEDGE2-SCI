@@ -21,9 +21,9 @@ class CLI:
         self.register("status", self.cmd_status, "System summary")
         self.register("sensors", self.cmd_sensors, "Read science sensors (use --stream to loop)")
         self.register("hk", self.cmd_hk, "Read housekeeping sensors (use --stream to loop)")
-        self.register("buffer-status", self.cmd_buffer_status, "Show buffer usage")
-        self.register("dump-science", self.cmd_dump_science, "Dump all buffer samples")
-        self.register("erase-buffers", self.cmd_erase_buffers, "Erase buffer")
+        self.register("buffer", self.cmd_buffer, "Show buffer usage")
+        self.register("dump", self.cmd_dump, "Dump all buffer samples")
+        self.register("erase", self.cmd_erase, "Erase buffer")
         self.register("cal-start", self.cmd_cal_start, "Begin calibration for channel")
         self.register("cal-set", self.cmd_cal_set, "Set calibration point")
         self.register("cal-save", self.cmd_cal_save, "Save calibration to flash")
@@ -77,10 +77,10 @@ class CLI:
 
         # Latest sensor readings
         try:
-            timestamp, temps, pressures = self.sensors.read_sensors()
+            timestamp, temperatures, pressures = self.sensors.read_sensors()
             print(f"\nScience Sensors (Latest):")
-            print(f"  Thermocouples: {[f'{t:.2f}C' for t in temps]}")
-            print(f"  Pressures:     {[f'{p:.3f}' for p in pressures]}")
+            print(f"Temperatures:\t{['{:.2f}C'.format(t) for t in temperatures]}")
+            print(f"Pressures:\t{['{:.3f}?'.format(p) for p in pressures]}")
         except Exception as e:
             print(f"\nScience Sensors: Error - {e}")
 
@@ -90,62 +90,59 @@ class CLI:
             print(f"\nHousekeeping (Latest):")
             avg_voltage = sum(v for v, _, _, _ in ina_data) / len(ina_data) if ina_data else 0
             total_power = sum(p for _, _, p, _ in ina_data)
-            print(f"  Avg Voltage: {avg_voltage:.2f}V")
-            print(f"  Total Power: {total_power:.2f}W")
-            print(f"  Temperatures: {[f'{t:.1f}C' for t in max_temps]}")
+            print(f"Avg Voltage:\t{avg_voltage:.2f}V")
+            print(f"Total Power:\t{total_power:.2f}W")
+            print(f"Temperatures:\t{['{:.1f}C'.format(t) for t in max_temps]}")
         except Exception as e:
             print(f"\nHousekeeping: Error - {e}")
 
         print("\n=== END STATUS ===\n")
 
     def cmd_sensors(self, args):
-        print("\n=== SCIENCE PCB SENSORS STATUS ===\n")
+        print("\n=== SENSORS STATUS ===\n")
         if args and args[0] == "--stream":
             print("Streaming mode not implemented yet")
             return
 
         timestamp, temperatures, pressures = self.sensors.read_sensors()
 
-        print(f"Timestamp:		{timestamp}")
-        print(f"Temperatures:	{[f'{t:.2f}' for t in temperatures]}")
-        print(f"Pressures:		{[f'{p:.3f}' for p in pressures]}")
-        print()
+        print(f"Timestamp:\t{timestamp}")
+        print(f"Temperatures:\t{['{:.2f}C'.format(t) for t in temperatures]}")
+        print(f"Pressures:\t{['{:.3f}?'.format(p) for p in pressures]}")
+        print("\n=== END STATUS ===\n")
 
     def cmd_hk(self, args):
+        print("\n=== HOUSEKEEPING STATUS ===\n")
         if args and args[0] == "--stream":
             print("Streaming mode not implemented yet")
             return
 
-        timestamp, ina238_data, hk_temps = self.housekeeping.read_all_housekeeping_data()
-        hk_voltages = [v for v, c, p, t in ina238_data]
-        hk_currents = [c for v, c, p, t in ina238_data]
-        hk_powers = [p for v, c, p, t in ina238_data]
-        hk_ina_temps = [t for v, c, p, t in ina238_data]
+        timestamp, ina238_data, temperatures = self.housekeeping.read_all_housekeeping_data()
+        voltages, currents, powers, ina_temps = map(list, zip(*ina238_data))
 
-        print("Housekeeping Data:")
-        print(f"Timestamp:		{timestamp}")
-        print(f"HK Voltages:	{[f'{v:.3f}V' for v in hk_voltages]}")
-        print(f"HK Currents:	{[f'{i:.3f}A' for i in hk_currents]}")
-        print(f"HK Powers:		{[f'{p:.3f}W' for p in hk_powers]}")
-        print(f"HK Temps:		{[f'{t:.1f}C' for t in hk_temps]}")
-        print(f"HK INA Temps:	{[f'{t:.1f}C' for t in hk_ina_temps]}")
-        print()
+        print(f"Timestamp:\t{timestamp}")
+        print(f"HK Voltages:\t{['{:.3f}V'.format(v) for v in voltages]}")
+        print(f"HK Currents:\t{['{:.3f}A'.format(i) for i in currents]}")
+        print(f"HK Powers:\t{['{:.3f}W'.format(p) for p in powers]}")
+        print(f"HK Temps:\t{['{:.1f}C'.format(t) for t in temperatures]}")
+        print(f"HK INA Temps:\t{['{:.1f}C'.format(t) for t in ina_temps]}")
+        print("\n=== END STATUS ===\n")
 
-    def cmd_buffer_status(self, args):
+    def cmd_buffer(self, args):
         size = self.buffer.size()
         capacity = self.buffer.capacity
         percentage = (size / capacity * 100) if capacity > 0 else 0
         is_full = self.buffer.is_full()
 
         print("\n=== Buffer Status ===")
-        print(f"Capacity:	{capacity} samples")
-        print(f"Used:		{size} samples")
-        print(f"Free:		{capacity - size} samples")
-        print(f"Usage:		{percentage:.1f}%")
-        print(f"Status:		{'FULL' if is_full else 'OK'}")
-        print()
+        print(f"Capacity:\t{capacity} samples")
+        print(f"Used:\t\t{size} samples")
+        print(f"Free:\t\t{capacity - size} samples")
+        print(f"Usage:\t\t{percentage:.1f}%")
+        print(f"Status:\t\t{'FULL' if is_full else 'OK'}")
+        print("\n=== END STATUS ===\n")
 
-    def cmd_dump_science(self, args):
+    def cmd_dump(self, args):
         samples = self.buffer.get_all()
 
         if not samples:
@@ -172,23 +169,23 @@ class CLI:
                 hk_ina_temps = unpacked[33:39]
 
                 print(f"Sample #{idx} | Timestamp: {timestamp} ms")
-                print(f"Temperatures:	{[f'{t:.2f}' for t in temps]}")
-                print(f"Pressures:		{[f'{p:.3f}' for p in pressures]}")
-                print(f"HK Voltages:	{[f'{v:.3f}V' for v in hk_voltages]}")
-                print(f"HK Currents:	{[f'{i:.3f}A' for i in hk_currents]}")
-                print(f"HK Powers:		{[f'{p:.3f}W' for p in hk_powers]}")
-                print(f"HK Temps:		{[f'{t:.1f}C' for t in hk_temps]}")
-                print(f"HK INA Temps:	{[f'{t:.1f}C' for t in hk_ina_temps]}")
+                print(f"Temperatures:\t{['{:.2f}'.format(t) for t in temps]}")
+                print(f"Pressures:\t{['{:.3f}'.format(p) for p in pressures]}")
+                print(f"HK Voltages:\t{['{:.3f}V'.format(v) for v in hk_voltages]}")
+                print(f"HK Currents:\t{['{:.3f}A'.format(i) for i in hk_currents]}")
+                print(f"HK Powers:\t{['{:.3f}W'.format(p) for p in hk_powers]}")
+                print(f"HK Temps:\t{['{:.1f}C'.format(t) for t in hk_temps]}")
+                print(f"HK INA Temps:\t{['{:.1f}C'.format(t) for t in hk_ina_temps]}")
                 print()
 
             except Exception as e:
                 print(f"Error unpacking sample #{idx}: {e}")
 
-        print("=== End of dump ===\n")
+        print("=== END DUMP ===\n")
 
-    def cmd_erase_buffers(self, args):
+    def cmd_erase(self, args):
         self.buffer.clear()
-        print("Buffer erased.")
+        print("BUFFER ERASED")
 
     def cmd_cal_start(self, args):
         # TODO: implement
@@ -216,10 +213,10 @@ class CLI:
 
     def cmd_version(self, args):
         print("\n=== Firmware Information ===")
-        print("Board:		HEDGE-2 Science PCB")
-        print("Firmware:	v1.0.0")
-        print("Build Date:	2025-11-##")
-        print("MicroPython:	{sys.version}")
+        print("Board:\t\tHEDGE-2 Science PCB")
+        print("Firmware:\tv1.0.0")
+        print("Build Date:\t2025-11-##")
+        print(f"MicroPython:\t{sys.version}")
         print()
 
     def cmd_reboot(self, args):
