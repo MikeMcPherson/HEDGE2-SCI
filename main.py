@@ -3,11 +3,14 @@ import time
 import utils
 import config
 import _thread
+from machine import Pin
 from comms import RS485, SpaceCAN, CLI
 from core import SensorManager, HousekeepingManager, Buffer
 
 thread_lock = _thread.allocate_lock()
 interval_ms = 500  # 2 Hz
+power_led = Pin(0, Pin.OUT)
+status_led = Pin(11, Pin.OUT)
 
 
 def sensor_acquisition(sensors, housekeeping, buffer):
@@ -49,7 +52,10 @@ def communications(sensors, housekeeping, buffer):
             sample = utils.buffer_crc16(sample)
 
         if sample:
+            status_led.value(1)
             comms.send(sample)
+            time.sleep_ms(30)
+            status_led.value(0)
 
         time.sleep_ms(10)
 
@@ -70,6 +76,7 @@ def communications(sensors, housekeeping, buffer):
 
 
 def main():
+    power_led.value(1)
     sensors = SensorManager()
     housekeeping = HousekeepingManager()
     buffer = Buffer(capacity=120)
