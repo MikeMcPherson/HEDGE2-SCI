@@ -330,12 +330,98 @@ class CLI:
             print("Rebooting in 2 seconds...")
             time.sleep_ms(2000)
             machine.reset()
-
         except Exception as e:
             print(f"Error resetting calibration: {e}")
 
     def cmd_self_test(self, args):
-        print("Self-test not implemented")
+        print("\n=== SELF TEST ===\n")
+
+        passed = 0
+        failed = 0
+
+        try:
+            timestamp, temperatures, pressures = self.sensors.read_sensors()
+
+            print("Testing temperature sensors...")
+            for i, temp in enumerate(temperatures):
+                if -100 < temp < 300:
+                    print(f"Temp[{i}]: {temp:.2f}C - PASS")
+                    passed += 1
+                else:
+                    print(f"Temp[{i}]: {temp:.2f}C - FAIL (out of range)")
+                    failed += 1
+
+            print("\nTesting pressure sensors...")
+            for i, pressure in enumerate(pressures):
+                if -0.5 < pressure < 5:
+                    print(f"Pressure[{i}]: {pressure:.3f} - PASS")
+                    passed += 1
+                else:
+                    print(f"Pressure[{i}]: {pressure:.3f} - FAIL (out of range)")
+                    failed += 1
+        except Exception as e:
+            print(f"All sensors - FAIL: {e}")
+            failed += 8
+
+        print("\nTesting housekeeping sensors...")
+        try:
+            timestamp, ina238_data, hk_temps = self.housekeeping.read_all_housekeeping_data()
+            for i, (voltage, current, power, ina_temp) in enumerate(ina238_data):
+                v_ok = 0 < voltage < 30
+                i_ok = -10 < current < 20
+                p_ok = 0 < power < 600
+                t_ok = -40 < ina_temp < 125
+
+                if v_ok and i_ok and p_ok and t_ok:
+                    print(f"INA238[{i}]: {voltage:.2f}V {current:.2f}A {power:.2f}W {ina_temp:.1f}C - PASS")
+                    passed += 1
+                else:
+                    status = []
+                    if not v_ok:
+                        status.append("V")
+                    if not i_ok:
+                        status.append("I")
+                    if not p_ok:
+                        status.append("P")
+                    if not t_ok:
+                        status.append("T")
+                    print(f"INA238[{i}]: {voltage:.2f}V {current:.2f}A {power:.2f}W {ina_temp:.1f}C - FAIL ({','.join(status)})")
+                    failed += 1
+
+            for i, temp in enumerate(hk_temps):
+                if -100 < temp < 150:
+                    print(f"MAX6634[{i}]: {temp:.1f}C - PASS")
+                    passed += 1
+                else:
+                    print(f"MAX6634[{i}]: {temp:.1f}C - FAIL (out of range)")
+                    failed += 1
+        except Exception as e:
+            print(f"Housekeeping - FAIL: {e}")
+            failed += 12
+
+        print("\nTesting buffer...")
+        try:
+            size = self.buffer.size()
+            capacity = self.buffer.capacity
+            if capacity > 0:
+                print(f"Buffer: {size}/{capacity} - PASS")
+                passed += 1
+            else:
+                print(f"Buffer: Invalid capacity - FAIL")
+                failed += 1
+        except Exception as e:
+            print(f"Buffer - FAIL: {e}")
+            failed += 1
+
+        print(f"\n=== RESULTS ===")
+        print(f"Passed: {passed}")
+        print(f"Failed: {failed}")
+        print(f"Total:  {passed + failed}")
+
+        if failed == 0:
+            print("\nALL TESTS PASSED\n")
+        else:
+            print(f"\n{failed} TEST(S) FAILED\n")
 
     def cmd_version(self, args):
         print("\n=== Firmware Information ===")
