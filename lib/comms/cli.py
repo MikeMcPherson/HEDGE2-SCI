@@ -433,5 +433,5 @@ class CLI:
 
     def cmd_reboot(self, args):
         print("Rebooting...")
-        time.sleep_ms(200)
+        time.sleep_ms(2000)
         machine.reset()
