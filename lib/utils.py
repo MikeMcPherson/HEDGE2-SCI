@@ -10,7 +10,7 @@ def is_usb_connected():
         return False
 
 
-def compute_buffer_crc16(buffer_data):
+def buffer_crc16(buffer_data):
     if not buffer_data:
         return None
 
