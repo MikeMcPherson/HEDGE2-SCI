@@ -2,6 +2,7 @@ import sys
 import time
 import struct
 import machine
+import lib.calibration as calibration
 
 
 class CLI:
@@ -24,11 +25,10 @@ class CLI:
         self.register("buffer", self.cmd_buffer, "Show buffer usage")
         self.register("dump", self.cmd_dump, "Dump all buffer samples")
         self.register("erase", self.cmd_erase, "Erase buffer")
+        self.register("cal-show", self.cmd_cal_show, "Show calibration offsets")
         self.register("cal-start", self.cmd_cal_start, "Begin calibration for channel")
         self.register("cal-set", self.cmd_cal_set, "Set calibration point")
-        self.register("cal-save", self.cmd_cal_save, "Save calibration to flash")
         self.register("cal-reset", self.cmd_cal_reset, "Reset calibration")
-        self.register("set-rate", self.cmd_set_rate, "Set sampling rates")
         self.register("self-test", self.cmd_self_test, "Run self-test")
         self.register("version", self.cmd_version, "Firmware version")
         self.register("reboot", self.cmd_reboot, "Reboot the board")
@@ -181,34 +181,141 @@ class CLI:
             except Exception as e:
                 print(f"Error unpacking sample #{idx}: {e}")
 
-        print("=== END DUMP ===\n")
+        print("\n=== END DUMP ===\n")
 
     def cmd_erase(self, args):
         self.buffer.clear()
         print("BUFFER ERASED")
 
+    def cmd_cal_show(self, args):
+        """Display current calibration offsets."""
+        print("\n=== Current Calibration Offsets ===\n")
+
+        offsets = [("Temperatures", calibration.TEMP_OFFSETS), ("Pressures", calibration.PRESSURE_OFFSETS)]
+
+        for name, values in offsets:
+            print(f"{name}:")
+            for i, offset in enumerate(values):
+                marker = " *" if offset != 0.0 else ""
+                print(f"Channel {i}: {offset:+.4f}{marker}")
+            print()
+
+        print("(* = non-zero offset)")
+        print("\n=== END ===\n")
+
+    def _update_cal(self, var_name, channel, offset):
+        """Update calibration.py and reload."""
+        with open("lib/calibration.py", "r") as f:
+            lines = f.readlines()
+
+        current = list(getattr(calibration, var_name))
+        current[channel] = offset
+
+        for i, line in enumerate(lines):
+            if line.strip().startswith(f"{var_name} = ["):
+                lines[i] = f"{var_name} = [{', '.join([str(v) for v in current])}]\n"
+                break
+
+        with open("lib/calibration.py", "w") as f:
+            f.writelines(lines)
+
     def cmd_cal_start(self, args):
-        # TODO: implement
-        print("Calibration start not implemented")
+        """Interactive calibration walkthrough."""
+        print("\n=== Interactive Calibration ===\n")
+
+        timestamp, temperatures, pressures = self.sensors.read_sensors()
+
+        print("--- Temperatures ---")
+        for i, temp in enumerate(temperatures):
+            while True:
+                print(f"Temp[{i}] = {temp:.2f}C (offset: {calibration.TEMP_OFFSETS[i]:+.2f})")
+                offset_str = input("New offset [Enter to skip]: ").strip()
+                if offset_str:
+                    try:
+                        self._update_cal("TEMP_OFFSETS", i, float(offset_str))
+                        print("Set")
+                        break
+                    except:
+                        print("Invalid")
+                else:
+                    break
+
+        print("--- Pressures ---")
+        for i, pressure in enumerate(pressures):
+            while True:
+                print(f"Pressure[{i}] = {pressure:.3f} (offset: {calibration.PRESSURE_OFFSETS[i]:+.3f})")
+                offset_str = input("New offset [Enter to skip]: ").strip()
+                if offset_str:
+                    try:
+                        self._update_cal("PRESSURE_OFFSETS", i, float(offset_str))
+                        print(f"Set")
+                        break
+                    except:
+                        print("Invalid")
+                else:
+                    break
+
+        print("Done. Rebooting in 2 seconds...")
+        time.sleep_ms(2000)
+        machine.reset()
 
     def cmd_cal_set(self, args):
-        # TODO: implement
-        print("Calibration set not implemented")
+        """Set specific: cal-set <type> <ch> <offset>"""
+        if len(args) < 3:
+            print("Usage: cal-set <type> <channel> <offset>")
+            print("Types: temperature, pressure")
+            return
 
-    def cmd_cal_save(self, args):
-        # TODO: implement
-        print("Calibration save not implemented")
+        type_map = {
+            "temperature": ("TEMP_OFFSETS", 4),
+            "pressure": ("PRESSURE_OFFSETS", 4),
+        }
+
+        if args[0] not in type_map:
+            print("Invalid type. Valid: temperature, pressure")
+            return
+
+        var_name, max_ch = type_map[args[0]]
+        ch = int(args[1])
+        offset = float(args[2])
+
+        if ch < 0 or ch >= max_ch:
+            print(f"Invalid channel. Valid: 0-{max_ch - 1}")
+            return
+
+        self._update_cal(var_name, ch, offset)
+        print(f"Set {args[0]}[{ch}] = {offset:+.4f}")
+        print("Rebooting in 2 seconds...")
+        time.sleep_ms(2000)
+        machine.reset()
 
     def cmd_cal_reset(self, args):
-        # TODO: implement
-        print("Calibration reset not implemented")
+        """Reset all calibration offsets to zero."""
+        print("WARNING: This will reset ALL calibration offsets to zero.")
 
-    def cmd_set_rate(self, args):
-        # TODO: implement
-        print("Set rate not implemented")
+        try:
+            content = """# HEDGE-2 SCI Board - Calibration Offsets
+            # This file is auto-generated and updated by CLI calibration commands
+
+            # Temperature offsets (4 thermocouples)
+            TEMP_OFFSETS = [0.0, 0.0, 0.0, 0.0]
+    
+            # Pressure offsets (4 pressure sensors)
+            PRESSURE_OFFSETS = [0.0, 0.0, 0.0, 0.0]
+            """
+
+            with open("lib/calibration.py", "w") as f:
+                f.write(content)
+
+            print("All calibration offsets reset to zero!")
+            print("Rebooting in 2 seconds...")
+            time.sleep_ms(2000)
+            machine.reset()
+
+        except Exception as e:
+            print(f"Error resetting calibration: {e}")
 
     def cmd_self_test(self, args):
-        # TODO: implement
         print("Self-test not implemented")
 
     def cmd_version(self, args):
