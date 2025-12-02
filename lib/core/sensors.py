@@ -2,6 +2,7 @@
 
 import time
 from machine import SPI, Pin
+import lib.calibration as calibration
 from lib.drivers import MAX31856, ADS1118
 
 
@@ -19,16 +20,16 @@ class SensorManager:
         self.pressure_adc = ADS1118(self.spi, cs_pin=17)
     
     def read_all_temperatures(self):
-        return [tc.read_temperature() for tc in self.thermocouples]
+        return [self.read_temperature(i) for i in range(len(self.thermocouples))]
     
     def read_temperature(self, channel):
-        return self.thermocouples[channel].read_temperature()
+        return self.thermocouples[channel].read_temperature() + calibration.TEMP_OFFSETS[channel]
     
     def read_all_pressures(self):
-        return [self.pressure_adc.read_pressure(channel) for channel in range(4)]
+        return [self.read_pressure(channel) for channel in range(4)]
     
     def read_pressure(self, channel):
-        return self.pressure_adc.read_pressure(channel)
+        return self.pressure_adc.read_pressure(channel) + calibration.PRESSURE_OFFSETS[channel]
     
     def read_sensors(self):
         timestamp = time.ticks_ms() & 0xFFFFFFFF

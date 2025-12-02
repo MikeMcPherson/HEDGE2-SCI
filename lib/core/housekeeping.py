@@ -2,6 +2,7 @@
 
 import time
 from machine import I2C, Pin
+import lib.calibration as calibration
 from lib.drivers import INA238, MAX6634
 
 # Default I2C Pins
@@ -30,10 +31,10 @@ class HousekeepingManager:
         if sensor.address not in self.i2c.scan():
             return 0.0, 0.0, 0.0, 0.0
 
-        voltage = sensor.read_bus_voltage()
-        current = sensor.read_current()
-        power = sensor.read_power()
-        temperature = sensor.read_die_temperature()
+        voltage = sensor.read_bus_voltage() + calibration.HK_VOLTAGE_OFFSETS[channel]
+        current = sensor.read_current() + calibration.HK_CURRENT_OFFSETS[channel]
+        power = sensor.read_power() + calibration.HK_POWER_OFFSETS[channel]
+        temperature = sensor.read_die_temperature() + calibration.HK_INA_TEMP_OFFSETS[channel]
 
         return voltage, current, power, temperature
     
@@ -47,14 +48,11 @@ class HousekeepingManager:
         if sensor.address not in self.i2c.scan():
             return 0.0
             
-        return sensor.read_temperature()
+        return sensor.read_temperature() + calibration.HK_TEMP_OFFSETS[channel]
         
     def read_all_housekeeping_temperatures(self):
         # Reads temperature from all 5 MAX6634 sensors.
-        return [
-            self.read_housekeeping_temperature(i) 
-            for i in range(len(self.max6634_sensors))
-        ]
+        return [self.read_housekeeping_temperature(i) for i in range(len(self.max6634_sensors))]
         
     def read_all_housekeeping_data(self):
         timestamp = time.ticks_ms() & 0xFFFFFFFF
