@@ -101,8 +101,17 @@ class CLI:
     def cmd_sensors(self, args):
         print("\n=== SENSORS STATUS ===\n")
         if args and args[0] == "--stream":
-            print("Streaming mode not implemented yet")
-            return
+            print("Streaming mode. Press Ctrl+C to stop.\n")
+            try:
+                while True:
+                    timestamp, temperatures, pressures = self.sensors.read_sensors()
+                    temps_str = ' '.join([f'{t:.2f}C' for t in temperatures])
+                    press_str = ' '.join([f'{p:.3f}' for p in pressures])
+                    print(f"\r{timestamp} | T: {temps_str} | P: {press_str}", end='')
+                    time.sleep_ms(500)
+            except KeyboardInterrupt:
+                print("\n\nStreaming stopped.\n")
+                return
 
         timestamp, temperatures, pressures = self.sensors.read_sensors()
 
@@ -114,8 +123,18 @@ class CLI:
     def cmd_hk(self, args):
         print("\n=== HOUSEKEEPING STATUS ===\n")
         if args and args[0] == "--stream":
-            print("Streaming mode not implemented yet")
-            return
+            print("Streaming mode. Press Ctrl+C to stop.\n")
+            try:
+                while True:
+                    timestamp, ina238_data, temperatures = self.housekeeping.read_all_housekeeping_data()
+                    voltages, currents, powers, ina_temps = map(list, zip(*ina238_data))
+                    v_str = ' '.join([f'{v:.2f}V' for v in voltages])
+                    i_str = ' '.join([f'{i:.2f}A' for i in currents])
+                    print(f"\r{timestamp} | V: {v_str} | I: {i_str}", end='')
+                    time.sleep_ms(500)
+            except KeyboardInterrupt:
+                print("\n\nStreaming stopped.\n")
+                return
 
         timestamp, ina238_data, temperatures = self.housekeeping.read_all_housekeeping_data()
         voltages, currents, powers, ina_temps = map(list, zip(*ina238_data))
