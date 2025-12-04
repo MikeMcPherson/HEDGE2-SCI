@@ -11,10 +11,10 @@ INA238_REG_CURRENT = 0x08
 INA238_REG_POWER = 0x09
 
 # Sensor LSBs (from datasheet)
-INA238_VBUS_LSB = 0.003125  # 3.125 mV/LSB for Bus Voltage
+INA238_VBUS_LSB = 0.000005  # 1.25 uV/LSB for Bus Voltage
 INA238_TEMP_LSB = 0.0078125  # 0.0078125 °C/LSB for Die Temperature
 
-R_SHUNT_OHMS = 0.01  # Example: 10 mOhm (0.01 Ohms)
+R_SHUNT_OHMS = 0.24  # Example: 10 mOhm (0.01 Ohms)
 CURRENT_LSB_AMPS = 0.001  # Example: 1 mA (0.001 Amps) - sets the resolution
 
 # Calculated Constants
@@ -34,8 +34,12 @@ class INA238:
         if self.address not in self.i2c.scan():
             print(f"Warning: INA238 not found at address 0x{address:02x}")
             return
+        #1
+        reg_config_val = 0x0000
+        self.i2c.writeto_mem(self.address, INA238_REG_CONFIG,
+                             reg_config_val.to_bytes(2, 'big'))
 
-            # 1. Write SHUNT_CAL register (MSB first, 16-bit)
+        # 2. Write SHUNT_CAL register (MSB first, 16-bit)
         self.i2c.writeto_mem(self.address, INA238_REG_SHUNT_CAL,
                              INA238_SHUNT_CAL_VAL.to_bytes(2, 'big'))
 
