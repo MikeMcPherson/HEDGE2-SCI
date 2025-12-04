@@ -1,7 +1,6 @@
 import gc
 import time
 import utils
-import config
 import _thread
 from machine import Pin
 from comms import RS485, SpaceCAN, CLI
