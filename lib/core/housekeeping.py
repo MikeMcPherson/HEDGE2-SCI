@@ -2,7 +2,6 @@
 
 import time
 from machine import I2C, Pin
-import lib.calibration as calibration
 from lib.drivers import INA238, MAX6634
 
 # Default I2C Pins
