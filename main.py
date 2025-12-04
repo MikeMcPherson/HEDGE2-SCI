@@ -38,10 +38,11 @@ def sensor_acquisition(sensors, housekeeping, buffer):
             elapsed = time.ticks_diff(time.ticks_ms(), start)
             sleep_time = max(0, interval_ms - elapsed)
             time.sleep_ms(sleep_time)
-    
+
     except Exception as e:
         power_led.value(0)
         raise
+
 
 def communications(sensors, housekeeping, buffer):
     """Reads buffer, sends it, and initializes CLI if USB is plugged in"""
@@ -53,7 +54,7 @@ def communications(sensors, housekeeping, buffer):
             status_led.value(not status_led.value())
             time.sleep_ms(1000)
         raise
-    
+
     last_usb_state = False
 
     try:
@@ -85,7 +86,7 @@ def communications(sensors, housekeeping, buffer):
 
             last_usb_state = usb_state
             time.sleep_ms(10)
-    
+
     except Exception as e:
         print(f"Communications thread error: {e}")
         while True:
@@ -102,7 +103,7 @@ def main():
 
         _thread.start_new_thread(communications, (sensors, housekeeping, buffer))  # Core 1
         sensor_acquisition(sensors, housekeeping, buffer)  # Core 0
-    
+
     except Exception as e:
         print(f"Fatal error in main: {e}")
         while True:
