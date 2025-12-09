@@ -6,9 +6,9 @@ INA238_REG_ADC_CONFIG = 0x01
 INA238_REG_SHUNT_CAL = 0x02
 INA238_REG_VSHUNT = 0x04
 INA238_REG_VBUS = 0x05
-INA238_REG_DIETEMP = 0x07
-INA238_REG_CURRENT = 0x08
-INA238_REG_POWER = 0x09
+INA238_REG_DIETEMP = 0x06
+INA238_REG_CURRENT = 0x07
+INA238_REG_POWER = 0x08
 
 # Sensor LSBs (from datasheet)
 INA238_VBUS_LSB = 0.000005  # 1.25 uV/LSB for Bus Voltage
@@ -31,7 +31,7 @@ class INA238:
         self.current_lsb = CURRENT_LSB_AMPS
         self.power_lsb = INA238_POWER_LSB
 
-        if self.address not in self.i2c.scan():
+        if not self._check_presence():
             print(f"Warning: INA238 not found at address 0x{address:02x}")
             return
         #1
@@ -48,6 +48,20 @@ class INA238:
         adc_config_val = 0x440F
         self.i2c.writeto_mem(self.address, INA238_REG_ADC_CONFIG,
                              adc_config_val.to_bytes(2, 'big'))
+        
+    def _check_presence(self):
+        """
+        Performs a reliable I2C presence check by attempting a minimal write.
+        This bypasses the unreliable timing of i2c.scan().
+        """
+        # A minimal write operation (address + write bit + stop)
+        # If the device is present, it will send an ACK and the call succeeds.
+        try:
+            self.i2c.writeto(self.address, b'')
+            return True
+        except OSError:
+            # If writeto fails (NACK or timeout), the device is not present
+            return False
 
     def _read_register_signed(self, reg_addr):
         data = self.i2c.readfrom_mem(self.address, reg_addr, 2)
@@ -76,3 +90,34 @@ class INA238:
         # Returns die temperature in Celsius (°C).#
         raw_temp = self._read_register_signed(INA238_REG_DIETEMP)
         return raw_temp * INA238_TEMP_LSB
+    
+    def slow_i2c_scan(i2c_bus, delay_us=100):
+        """
+        Performs a custom I2C scan from 0x08 to 0x77, with a delay between checks.
+        """
+        found_devices = []
+        print(f"Starting custom scan with {delay_us} us delay per address...")
+
+        # I2C addresses range from 0x08 to 0x77
+        for address in range(0x08, 0x78):
+            if self.check_device_presence(i2c_bus, address):
+                found_devices.append(address)
+            
+            # Insert the crucial delay after each check
+            time.sleep_us(delay_us) 
+            
+        return found_devices
+    
+    def check_device_presence(i2c_bus, address):
+        """
+        Attempts a minimal I2C write to check for device presence (ACK).
+        """
+        try:
+            # Attempt to write an empty buffer. If successful, device is present.
+            i2c_bus.writeto(address, b'')
+            return True
+        except OSError:
+            # OSError usually indicates no ACK (device not present)
+            return False
+    
+

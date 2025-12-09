@@ -9,7 +9,7 @@ I2C_SCL_PIN = 21
 I2C_SDA_PIN = 20
 
 INA238_ADDRESSES = [0x40, 0x41, 0x42, 0x43, 0x44]
-MAX6634_ADDRESSES = [0x48, 0x49, 0x4A, 0x4B, 0x4C]
+MAX6634_ADDRESSES = [0x48, 0x49, 0x4A, 0x4B]
 
 
 class HousekeepingManager:
@@ -23,11 +23,25 @@ class HousekeepingManager:
         # Instantiate 5 MAX6634 sensors
         self.max6634_sensors = [MAX6634(self.i2c, address) for address in MAX6634_ADDRESSES]
         
+    def _check_device_presence(self, address):
+        """
+        Performs a reliable, targeted I2C presence check using writeto().
+        This is fast and works around the INA238's timing issue without scanning.
+        """
+        try:
+            # Attempt a minimal write operation (address + write bit + stop).
+            # If the device is present and ACKs, this call succeeds.
+            self.i2c.writeto(address, b'')
+            return True
+        except OSError:
+            # OSError (NACK/timeout) means the device is not present.
+            return False
+        
     def read_ina238_data(self, channel):
         # Reads all core data from a specific INA238 power monitor (0-4).
         sensor = self.ina238_sensors[channel]
         # Check if sensor was initialized (i.e., address found on bus)
-        if sensor.address not in self.i2c.scan():
+        if not self._check_device_presence(sensor.address):
             return 0.0, 0.0, 0.0, 0.0
 
         voltage = sensor.read_bus_voltage()
@@ -58,3 +72,4 @@ class HousekeepingManager:
         ina238_data = self.read_all_ina238_data()
         max6634_temperatures = self.read_all_housekeeping_temperatures()
         return timestamp, ina238_data, max6634_temperatures
+
