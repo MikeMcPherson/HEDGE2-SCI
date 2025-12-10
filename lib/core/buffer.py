@@ -11,23 +11,23 @@ class Buffer:
         self.write_index = 0
         self.count = 0
 
-    def add_sample(self, timestamp=None, temperatures=None, pressures=None, hk_voltages=None, hk_currents=None,
-                   hk_powers=None, hk_temps=None, hk_ina_temps=None):
+    def add_sample(self, timestamp=None, temperatures=None, pressures=None, hk_temps=None, hk_voltages=None,
+                   hk_currents=None, hk_powers=None, hk_ina_temps=None):
         if timestamp is None:
             timestamp = time.ticks_ms() & 0xFFFFFFFF
 
         temperatures = temperatures or [0.0, 0.0, 0.0, 0.0]
         pressures = pressures or [0.0, 0.0, 0.0, 0.0]
+        hk_temps = hk_temps or [0.0, 0.0, 0.0, 0.0]
         hk_voltages = hk_voltages or [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         hk_currents = hk_currents or [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         hk_powers = hk_powers or [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        hk_temps = hk_temps or [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         hk_ina_temps = hk_ina_temps or [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-        # Struct format: timestamp + (4 temps + 4 pressures) + (6V + 6I + 6P + 6T + 6INAT)
-        fmt = "<I4f4f6f6f6f6f6f"  # = 1 uint32 + 38 floats total
-        packed = struct.pack(fmt, timestamp, *temperatures, *pressures, *hk_voltages, *hk_currents, *hk_powers,
-                             *hk_temps, *hk_ina_temps)
+        # Struct format: timestamp + (4 temps + 4 pressures) + (4T + 6V + 6I + 6P + 6INAT)
+        fmt = "<I4f4f4f6f6f6f6f"  # = 1 uint32 + 36 floats total
+        packed = struct.pack(fmt, timestamp, *temperatures, *pressures, *hk_temps * hk_voltages, *hk_currents,
+                             *hk_powers, *hk_ina_temps)
 
         self.buffer[self.write_index] = packed
         self.write_index = (self.write_index + 1) % self.capacity
