@@ -26,7 +26,7 @@ class Buffer:
 
         # Struct format: timestamp + (4 temps + 4 pressures) + (4T + 6V + 6I + 6P + 6INAT)
         fmt = "<I4f4f4f6f6f6f6f"  # = 1 uint32 + 36 floats total
-        packed = struct.pack(fmt, timestamp, *temperatures, *pressures, *hk_temps * hk_voltages, *hk_currents,
+        packed = struct.pack(fmt, timestamp, *temperatures, *pressures, *hk_temps, * hk_voltages, *hk_currents,
                              *hk_powers, *hk_ina_temps)
 
         self.buffer[self.write_index] = packed
