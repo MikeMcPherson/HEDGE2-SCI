@@ -4,6 +4,19 @@ import struct
 import machine
 import lib.calibration as calibration
 
+default_calibration = """# HEDGE-2 SCI Board - Calibration Offsets
+# This file is auto-generated and updated by CLI calibration commands
+
+# Temperature offsets (4 thermocouples)
+TEMP_OFFSETS = [0.0, 0.0, 0.0, 0.0]
+
+# Pressure slopes (4 pressure sensors)
+PRESSURE_SLOPES = [0.0, 0.0, 0.0, 0.0]
+
+# Pressure offsets (4 pressure sensors)
+PRESSURE_OFFSETS = [0.0, 0.0, 0.0, 0.0]
+"""
+
 
 class CLI:
     def __init__(self, sensors, housekeeping, buffer):
@@ -30,6 +43,7 @@ class CLI:
         self.register("cal-set", self.cmd_cal_set, "Set calibration point")
         self.register("cal-reset", self.cmd_cal_reset, "Reset calibration")
         self.register("self-test", self.cmd_self_test, "Run self-test")
+        self.register("stream", self.cmd_stream, "Stream binary sensor data over USB serial")
         self.register("version", self.cmd_version, "Firmware version")
         self.register("reboot", self.cmd_reboot, "Reboot the board")
 
@@ -80,7 +94,7 @@ class CLI:
             timestamp, temperatures, pressures = self.sensors.read_sensors()
             print(f"\nScience Sensors (Latest):")
             print(f"Temperatures:\t{['{:.2f}C'.format(t) for t in temperatures]}")
-            print(f"Pressures:\t{['{:.3f}?'.format(p) for p in pressures]}")
+            print(f"Pressures:\t{['{:.3f} kPa'.format(p) for p in pressures]}")
         except Exception as e:
             print(f"\nScience Sensors: Error - {e}")
 
@@ -106,7 +120,7 @@ class CLI:
                 while True:
                     timestamp, temperatures, pressures = self.sensors.read_sensors()
                     temps_str = ' '.join([f'{t:.2f}C' for t in temperatures])
-                    press_str = ' '.join([f'{p:.3f}' for p in pressures])
+                    press_str = ' '.join([f'{p:.3f} kPa' for p in pressures])
                     print(f"\r{timestamp} | T: {temps_str} | P: {press_str}", end='')
                     time.sleep_ms(500)
             except KeyboardInterrupt:
@@ -117,7 +131,7 @@ class CLI:
 
         print(f"Timestamp:\t{timestamp}")
         print(f"Temperatures:\t{['{:.2f}C'.format(t) for t in temperatures]}")
-        print(f"Pressures:\t{['{:.3f}?'.format(p) for p in pressures]}")
+        print(f"Pressures:\t{['{:.3f} kPa'.format(p) for p in pressures]}")
         print("\n=== END STATUS ===\n")
 
     def cmd_hk(self, args):
@@ -188,11 +202,11 @@ class CLI:
                 hk_ina_temps = unpacked[33:39]
 
                 print(f"Sample #{idx} | Timestamp: {timestamp} ms")
-                print(f"Temperatures:\t{['{:.2f}'.format(t) for t in temps]}")
-                print(f"Pressures:\t{['{:.3f}'.format(p) for p in pressures]}")
-                print(f"HK Voltages:\t{['{:.3f}V'.format(v) for v in hk_voltages]}")
-                print(f"HK Currents:\t{['{:.3f}A'.format(i) for i in hk_currents]}")
-                print(f"HK Powers:\t{['{:.3f}W'.format(p) for p in hk_powers]}")
+                print(f"Temperatures:\t{['{:.2f}C'.format(t) for t in temps]}")
+                print(f"Pressures:\t{['{:.3f} kPa'.format(p) for p in pressures]}")
+                print(f"HK Voltages:\t{['{:.3f} V'.format(v) for v in hk_voltages]}")
+                print(f"HK Currents:\t{['{:.3f} A'.format(i) for i in hk_currents]}")
+                print(f"HK Powers:\t{['{:.3f} W'.format(p) for p in hk_powers]}")
                 print(f"HK Temps:\t{['{:.1f}C'.format(t) for t in hk_temps]}")
                 print(f"HK INA Temps:\t{['{:.1f}C'.format(t) for t in hk_ina_temps]}")
                 print()
@@ -210,8 +224,18 @@ class CLI:
         """Display current calibration offsets."""
         print("\n=== Current Calibration Offsets ===\n")
 
+        slopes = [("Pressures", calibration.PRESSURE_SLOPES)]
         offsets = [("Temperatures", calibration.TEMP_OFFSETS), ("Pressures", calibration.PRESSURE_OFFSETS)]
 
+        print("\n== Slopes ==\n")
+        for name, values in slopes:
+            print(f"{name}:")
+            for i, slope in enumerate(values):
+                marker = " *" if slope != 0.0 else ""
+                print(f"Channel {i}: {slope:+.4f}{marker}")
+            print()
+
+        print("\n== Offsets ==\n")
         for name, values in offsets:
             print(f"{name}:")
             for i, offset in enumerate(values):
@@ -222,21 +246,19 @@ class CLI:
         print("(* = non-zero offset)")
         print("\n=== END ===\n")
 
-    def _update_cal(self, var_name, channel, offset):
-        """Update calibration.py and reload."""
+    def _update_cal(self, updates):
+        """Update calibration.py with changes."""
         with open("lib/calibration.py", "r") as f:
             lines = f.readlines()
 
-        current = list(getattr(calibration, var_name))
-        current[channel] = offset
-
-        for i, line in enumerate(lines):
-            if line.strip().startswith(f"{var_name} = ["):
-                lines[i] = f"{var_name} = [{', '.join([str(v) for v in current])}]\n"
-                break
+        for var_name, new_values in updates.items():
+            for i, line in enumerate(lines):
+                if line.strip().startswith(f"{var_name} = ["):
+                    lines[i] = f"{var_name} = [{', '.join([str(v) for v in new_values])}]\n"
+                    break
 
         with open("lib/calibration.py", "w") as f:
-            f.writelines(lines)
+            f.write(''.join(lines))
 
     def cmd_cal_start(self, args):
         """Interactive calibration walkthrough."""
@@ -244,66 +266,97 @@ class CLI:
 
         timestamp, temperatures, pressures = self.sensors.read_sensors()
 
-        print("--- Temperatures ---")
+        new_temp_offsets = list(calibration.TEMP_OFFSETS)
+        new_pressure_slopes = list(calibration.PRESSURE_SLOPES)
+        new_pressure_offsets = list(calibration.PRESSURE_OFFSETS)
+
+        print("--- Temperature Offsets ---")
         for i, temp in enumerate(temperatures):
             while True:
                 print(f"Temp[{i}] = {temp:.2f}C (offset: {calibration.TEMP_OFFSETS[i]:+.2f})")
                 offset_str = input("New offset [Enter to skip]: ").strip()
                 if offset_str:
                     try:
-                        self._update_cal("TEMP_OFFSETS", i, float(offset_str))
+                        new_temp_offsets[i] = float(offset_str)
                         print("Set")
                         break
-                    except:
-                        print("Invalid")
+                    except Exception as e:
+                        print("Invalid:", e)
                 else:
                     break
 
-        print("--- Pressures ---")
+        print("--- Pressure Slopes ---")
         for i, pressure in enumerate(pressures):
             while True:
-                print(f"Pressure[{i}] = {pressure:.3f} (offset: {calibration.PRESSURE_OFFSETS[i]:+.3f})")
+                print(f"Pressure[{i}] = {pressure:.3f} kPa (offset: {calibration.PRESSURE_SLOPES[i]:+.3f})")
+                slope_str = input("New slope [Enter to skip]: ").strip()
+                if slope_str:
+                    try:
+                        new_pressure_slopes[i] = float(slope_str)
+                        print(f"Set")
+                        break
+                    except Exception as e:
+                        print("Invalid:", e)
+                else:
+                    break
+
+        print("--- Pressure Offsets ---")
+        for i, pressure in enumerate(pressures):
+            while True:
+                print(f"Pressure[{i}] = {pressure:.3f} kPa (offset: {calibration.PRESSURE_OFFSETS[i]:+.3f})")
                 offset_str = input("New offset [Enter to skip]: ").strip()
                 if offset_str:
                     try:
-                        self._update_cal("PRESSURE_OFFSETS", i, float(offset_str))
+                        new_pressure_offsets[i] = float(offset_str)
                         print(f"Set")
                         break
-                    except:
-                        print("Invalid")
+                    except Exception as e:
+                        print("Invalid:", e)
                 else:
                     break
+
+        self._update_cal({
+            "TEMP_OFFSETS": new_temp_offsets,
+            "PRESSURE_SLOPES": new_pressure_slopes,
+            "PRESSURE_OFFSETS": new_pressure_offsets
+        })
 
         print("Done. Rebooting in 2 seconds...")
         time.sleep_ms(2000)
         machine.reset()
 
     def cmd_cal_set(self, args):
-        """Set specific: cal-set <type> <ch> <offset>"""
+        """Set specific: cal-set <type> <channel> <value>"""
         if len(args) < 3:
             print("Usage: cal-set <type> <channel> <offset>")
-            print("Types: temperature, pressure")
+            print("Types: temperature_offset, pressure_slope, pressure_offset")
             return
 
         type_map = {
-            "temperature": ("TEMP_OFFSETS", 4),
-            "pressure": ("PRESSURE_OFFSETS", 4),
+            "temperature_offset": "TEMP_OFFSETS",
+            "pressure_slope": "PRESSURE_SLOPES",
+            "pressure_offset": "PRESSURE_OFFSETS",
         }
 
         if args[0] not in type_map:
-            print("Invalid type. Valid: temperature, pressure")
+            print("Invalid type. Valid: temperature_offset, pressure_slope, pressure_offset")
             return
 
-        var_name, max_ch = type_map[args[0]]
+        var_name = type_map[args[0]]
         ch = int(args[1])
-        offset = float(args[2])
+        value = float(args[2])
 
-        if ch < 0 or ch >= max_ch:
-            print(f"Invalid channel. Valid: 0-{max_ch - 1}")
+        current = list(getattr(calibration, var_name))
+
+        if ch < 0 or ch >= len(current):
+            print(f"Invalid channel. Valid: 0-{len(current) - 1}")
             return
 
-        self._update_cal(var_name, ch, offset)
-        print(f"Set {args[0]}[{ch}] = {offset:+.4f}")
+        current[ch] = value
+
+        self._update_cal({var_name: current})
+
+        print(f"Set {args[0]}[{ch}] = {value:+.4f}")
         print("Rebooting in 2 seconds...")
         time.sleep_ms(2000)
         machine.reset()
@@ -313,15 +366,7 @@ class CLI:
         print("WARNING: This will reset ALL calibration offsets to zero.")
 
         try:
-            content = """# HEDGE-2 SCI Board - Calibration Offsets
-            # This file is auto-generated and updated by CLI calibration commands
-
-            # Temperature offsets (4 thermocouples)
-            TEMP_OFFSETS = [0.0, 0.0, 0.0, 0.0]
-    
-            # Pressure offsets (4 pressure sensors)
-            PRESSURE_OFFSETS = [0.0, 0.0, 0.0, 0.0]
-            """
+            content = default_calibration
 
             with open("lib/calibration.py", "w") as f:
                 f.write(content)
@@ -354,10 +399,10 @@ class CLI:
             print("\nTesting pressure sensors...")
             for i, pressure in enumerate(pressures):
                 if -0.5 < pressure < 5:
-                    print(f"Pressure[{i}]: {pressure:.3f} - PASS")
+                    print(f"Pressure[{i}]: {pressure:.3f} kPa - PASS")
                     passed += 1
                 else:
-                    print(f"Pressure[{i}]: {pressure:.3f} - FAIL (out of range)")
+                    print(f"Pressure[{i}]: {pressure:.3f} kPa - FAIL (out of range)")
                     failed += 1
         except Exception as e:
             print(f"All sensors - FAIL: {e}")
@@ -373,7 +418,7 @@ class CLI:
                 t_ok = -40 < ina_temp < 125
 
                 if v_ok and i_ok and p_ok and t_ok:
-                    print(f"INA238[{i}]: {voltage:.2f}V {current:.2f}A {power:.2f}W {ina_temp:.1f}C - PASS")
+                    print(f"INA238[{i}]: {voltage:.2f} V {current:.2f} A {power:.2f} W {ina_temp:.1f}C - PASS")
                     passed += 1
                 else:
                     status = []
@@ -385,7 +430,9 @@ class CLI:
                         status.append("P")
                     if not t_ok:
                         status.append("T")
-                    print(f"INA238[{i}]: {voltage:.2f}V {current:.2f}A {power:.2f}W {ina_temp:.1f}C - FAIL ({','.join(status)})")
+                    print(
+                        f"INA238[{i}]: {voltage:.2f} V {current:.2f} A {power:.2f} W {ina_temp:.1f} C - FAIL "
+                        f"({','.join(status)})")
                     failed += 1
 
             for i, temp in enumerate(hk_temps):
@@ -422,6 +469,23 @@ class CLI:
             print("\nALL TESTS PASSED\n")
         else:
             print(f"\n{failed} TEST(S) FAILED\n")
+
+
+    def cmd_stream(self, args):
+        """Stream real-time binary sensor data over USB serial."""
+        print("Starting data stream... (Ctrl+C to stop)")
+
+        try:
+            while True:
+                sample = self.buffer.get_latest()
+
+                if sample:
+                    sys.stdout.buffer.write(sample)
+                    sys.stdout.buffer.flush()
+
+                time.sleep_ms(500)  # 2 Hz
+        except KeyboardInterrupt:
+            print("\nStream stopped.")
 
     def cmd_version(self, args):
         print("\n=== Firmware Information ===")
