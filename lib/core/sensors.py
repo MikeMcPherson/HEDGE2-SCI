@@ -29,7 +29,7 @@ class SensorManager:
         return [self.read_pressure(channel) for channel in range(4)]
     
     def read_pressure(self, channel):
-        return self.pressure_adc.read_pressure(channel) + calibration.PRESSURE_OFFSETS[channel]
+        return calibration.PRESSURE_SLOPES[channel] * self.pressure_adc.read_pressure(channel) + calibration.PRESSURE_OFFSETS[channel]
     
     def read_sensors(self):
         timestamp = time.ticks_ms() & 0xFFFFFFFF
