@@ -31,7 +31,9 @@ class SensorManager:
     def read_pressure(self, channel):
         voltage = (calibration.PRESSURE_SLOPES[channel] * self.pressure_adc.read_pressure(channel) +
                    calibration.PRESSURE_OFFSETS[channel])
-        psi = voltage / 0.00001
+
+        # M3021-000005-10KPG: 0-100mV = 0-10,000 PSI
+        psi = (voltage / 0.1) * 10000.0
         kpa = psi * 6.89476
         return kpa
 
