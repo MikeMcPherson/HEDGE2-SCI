@@ -5,7 +5,7 @@
 TEMP_OFFSETS = [0.0, 0.0, 0.0, 0.0]
 
 # Pressure slopes (4 pressure sensors)
-PRESSURE_SLOPES = [0.0, 0.0, 0.0, 0.0]
+PRESSURE_SLOPES = [1.0, 1.0, 1.0, 1.0]
 
 # Pressure offsets (4 pressure sensors)
 PRESSURE_OFFSETS = [0.0, 0.0, 0.0, 0.0]
