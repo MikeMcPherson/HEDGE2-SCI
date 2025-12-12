@@ -2,6 +2,7 @@ import sys
 import time
 import struct
 import machine
+import lib.utils as utils
 import lib.calibration as calibration
 
 default_calibration = """# HEDGE-2 SCI Board - Calibration Offsets
@@ -11,7 +12,7 @@ default_calibration = """# HEDGE-2 SCI Board - Calibration Offsets
 TEMP_OFFSETS = [0.0, 0.0, 0.0, 0.0]
 
 # Pressure slopes (4 pressure sensors)
-PRESSURE_SLOPES = [0.0, 0.0, 0.0, 0.0]
+PRESSURE_SLOPES = [1.0, 1.0, 1.0, 1.0]
 
 # Pressure offsets (4 pressure sensors)
 PRESSURE_OFFSETS = [0.0, 0.0, 0.0, 0.0]
@@ -19,12 +20,13 @@ PRESSURE_OFFSETS = [0.0, 0.0, 0.0, 0.0]
 
 
 class CLI:
-    def __init__(self, sensors, housekeeping, buffer):
+    def __init__(self, sensors, housekeeping, buffer, lock):
         self.commands = {}
         self.register_commands()
         self.sensors = sensors
         self.housekeeping = housekeeping
         self.buffer = buffer
+        self.lock = lock
 
     def register(self, name, handler, help_text=""):
         """Register a CLI command."""
@@ -50,7 +52,7 @@ class CLI:
     def run(self):
         print("SCIENCE PCB CLI Ready.\nType 'help' for commands.\n")
 
-        while True:
+        while True:    
             try:
                 line = sys.stdin.readline()
                 if not line:
@@ -154,10 +156,10 @@ class CLI:
         voltages, currents, powers, ina_temps = map(list, zip(*ina238_data))
 
         print(f"Timestamp:\t{timestamp}")
+        print(f"HK Temps:\t{['{:.1f}C'.format(t) for t in temperatures]}")
         print(f"HK Voltages:\t{['{:.3f}V'.format(v) for v in voltages]}")
         print(f"HK Currents:\t{['{:.3f}A'.format(i) for i in currents]}")
         print(f"HK Powers:\t{['{:.3f}W'.format(p) for p in powers]}")
-        print(f"HK Temps:\t{['{:.1f}C'.format(t) for t in temperatures]}")
         print(f"HK INA Temps:\t{['{:.1f}C'.format(t) for t in ina_temps]}")
         print("\n=== END STATUS ===\n")
 
@@ -184,7 +186,7 @@ class CLI:
 
         print(f"\n=== Science Data Dump ({len(samples)} samples) ===\n")
 
-        fmt = "<I4f4f6f6f6f6f6f"
+        fmt = "<I4f4f4f6f6f6f6f"
 
         for idx, packed_data in enumerate(samples):
             if not packed_data:
@@ -195,19 +197,19 @@ class CLI:
                 timestamp = unpacked[0]
                 temps = unpacked[1:5]
                 pressures = unpacked[5:9]
-                hk_voltages = unpacked[9:15]
-                hk_currents = unpacked[15:21]
-                hk_powers = unpacked[21:27]
-                hk_temps = unpacked[27:33]
-                hk_ina_temps = unpacked[33:39]
+                hk_temps = unpacked[9:13]
+                hk_voltages = unpacked[13:19]
+                hk_currents = unpacked[19:25]
+                hk_powers = unpacked[25:31]
+                hk_ina_temps = unpacked[31:37]
 
                 print(f"Sample #{idx} | Timestamp: {timestamp} ms")
                 print(f"Temperatures:\t{['{:.2f}C'.format(t) for t in temps]}")
                 print(f"Pressures:\t{['{:.3f} kPa'.format(p) for p in pressures]}")
+                print(f"HK Temps:\t{['{:.1f}C'.format(t) for t in hk_temps]}")
                 print(f"HK Voltages:\t{['{:.3f} V'.format(v) for v in hk_voltages]}")
                 print(f"HK Currents:\t{['{:.3f} A'.format(i) for i in hk_currents]}")
                 print(f"HK Powers:\t{['{:.3f} W'.format(p) for p in hk_powers]}")
-                print(f"HK Temps:\t{['{:.1f}C'.format(t) for t in hk_temps]}")
                 print(f"HK INA Temps:\t{['{:.1f}C'.format(t) for t in hk_ina_temps]}")
                 print()
 
@@ -470,18 +472,18 @@ class CLI:
         else:
             print(f"\n{failed} TEST(S) FAILED\n")
 
-
     def cmd_stream(self, args):
         """Stream real-time binary sensor data over USB serial."""
         print("Starting data stream... (Ctrl+C to stop)")
+        out = sys.stdout.buffer if hasattr(sys.stdout, 'buffer') else sys.stdout
 
         try:
             while True:
-                sample = self.buffer.get_latest()
+                with self.lock:
+                    sample = self.buffer.get_latest()
 
-                if sample:
-                    sys.stdout.buffer.write(sample)
-                    sys.stdout.buffer.flush()
+                if sample and len(sample) == 148:
+                    out.write(sample)
 
                 time.sleep_ms(500)  # 2 Hz
         except KeyboardInterrupt:
