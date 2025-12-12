@@ -1,4 +1,5 @@
 import gc
+import sys
 import time
 import utils
 import _thread
@@ -10,12 +11,14 @@ thread_lock = _thread.allocate_lock()
 interval_ms = 500  # 2 Hz
 power_led = Pin(0, Pin.OUT)
 status_led = Pin(11, Pin.OUT)
+_exit_requested = False
 
 
 def sensor_acquisition(sensors, housekeeping, buffer):
     """Sensor + Housekeeping acquisition, stores latest sample."""
+    global _exit_requested
     try:
-        while True:
+        while not _exit_requested:
             start = time.ticks_ms()
             timestamp1, temperatures, pressures = sensors.read_sensors()
             timestamp2, ina238_data, hk_temperatures = housekeeping.read_all_housekeeping_data()
@@ -26,10 +29,10 @@ def sensor_acquisition(sensors, housekeeping, buffer):
                     timestamp=timestamp1,
                     temperatures=temperatures,
                     pressures=pressures,
+                    hk_temps=hk_temperatures,
                     hk_voltages=voltages,
                     hk_currents=currents,
                     hk_powers=powers,
-                    hk_temps=hk_temperatures,
                     hk_ina_temps=ina_temps
                 )
 
@@ -46,6 +49,8 @@ def sensor_acquisition(sensors, housekeeping, buffer):
 
 def communications(sensors, housekeeping, buffer):
     """Reads buffer, sends it, and initializes CLI if USB is plugged in"""
+    global _exit_requested
+
     try:
         comms = RS485(baudrate=115200)
     except Exception as e:
@@ -55,37 +60,31 @@ def communications(sensors, housekeeping, buffer):
             time.sleep_ms(1000)
         raise
 
-    last_usb_state = False
-
     try:
-        while True:
-            sample = None
-            with thread_lock:
-                sample = buffer.get_all()
-                sample = utils.buffer_crc16(sample)
-
-            if sample:
-                status_led.value(1)
-                comms.send(sample)
-                time.sleep_ms(50)
-                status_led.value(0)
-
-            time.sleep_ms(10)
-
+        while not _exit_requested:
             usb_state = utils.is_usb_connected()
-            if usb_state and not last_usb_state:
+            if usb_state:
                 print("\n=== USB Connected - Starting CLI ===")
 
                 try:
-                    cli = CLI(sensors, housekeeping, buffer)
+                    cli = CLI(sensors, housekeeping, buffer, thread_lock)
                     cli.run()
                 except Exception as e:
                     print(f"CLI error: {e}")
                 finally:
                     print("=== CLI Stopped ===")
 
-            last_usb_state = usb_state
-            time.sleep_ms(10)
+            sample = None
+            with thread_lock:
+                samples = buffer.get_all()
+                if samples:
+                    sample = utils.buffer_crc16(samples)
+
+            if sample:
+                status_led.value(1)
+                comms.send(sample)
+                time.sleep_ms(50)
+                status_led.value(0)
 
     except Exception as e:
         print(f"Communications thread error: {e}")
@@ -113,4 +112,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nCancelled. Stopping threads...")
+        _exit_requested = True
+        power_led.value(0)
+        time.sleep(1)
+        print("Entering REPL.")
+        sys.exit()
+
+
