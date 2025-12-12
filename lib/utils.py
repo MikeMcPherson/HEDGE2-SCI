@@ -1,24 +1,26 @@
 # Auto-detect USB connection for CLI
+import io
 import sys
+from machine import Pin
 
 
 def is_usb_connected():
-    """Check if USB serial is connected."""
+    """Check if USB is physically connected."""
     try:
-        return sys.stdin is not None and hasattr(sys.stdin, 'read')
-    except:
+        vbus = Pin(24, Pin.IN)
+        val = vbus.value()
+        return val == 1
+    except Exception as e:
         return False
 
 
 def buffer_crc16(buffer_data):
+    """Append CRC16 to buffer data."""
     if not buffer_data:
         return None
-
-    # Concatenate all byte strings into one block
     combined = b"".join(buffer_data)
-
-    # Compute CRC16 over the combined data
-    return crc16(combined)
+    crc = crc16(combined)
+    return combined + crc.to_bytes(2, 'little')
 
 
 def crc16(data: bytes, poly=0xA001, initial=0xFFFF):
