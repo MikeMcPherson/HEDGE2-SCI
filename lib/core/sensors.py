@@ -26,9 +26,11 @@ class SensorManager:
         return self.thermocouples[channel].read_temperature() + calibration.TEMP_OFFSETS[channel]
     
     def read_all_pressures(self):
-        return [self.read_pressure(channel) for channel in range(4)]
+        # We now read two differential pressure channels (AIN0-AIN1, AIN2-AIN3)
+        return [self.read_pressure(channel) for channel in range(2)]
     
     def read_pressure(self, channel):
+        
         voltage = (calibration.PRESSURE_SLOPES[channel] * self.pressure_adc.read_pressure(channel) +
                    calibration.PRESSURE_OFFSETS[channel])
 

@@ -20,6 +20,11 @@ class ADS1118:
         self.cs.value(1)  # Active low
 
     def read_channel(self, channel):
+        """Read single-ended channel 0-3 (AIN0..AIN3 relative to GND).
+
+        Kept for backward-compatibility. Prefer using read_differential(), which
+        returns differential readings for pairs (AIN0-AIN1, AIN2-AIN3).
+        """
         if channel < 0 or channel > 3:
             return None
 
@@ -47,4 +52,42 @@ class ADS1118:
         return voltage
 
     def read_pressure(self, channel):
-        return self.read_channel(channel)
+        # Historically read_pressure returned single-ended channels 0..3.
+        # For systems using differential sensors we prefer two differential
+        # channels -- map channel indices 0..1 to differential pairs.
+        if channel in (0, 1):
+            return self.read_differential(channel)
+        return None
+
+    def read_differential(self, index):
+        """Read one of two differential pairs:
+
+        index 0 -> AIN0 - AIN1
+        index 1 -> AIN2 - AIN3
+        """
+        if index not in (0, 1):
+            return None
+
+        # ADS1118 MUX codes for differential inputs:
+        # 0b000 -> AIN0 - AIN1 -> 0x0000
+        # 0b011 -> AIN2 - AIN3 -> 0x3000
+        mux_codes = [0x0000, 0x3000]
+        mux = mux_codes[index]
+
+        config = (ADS1118_SS | mux | ADS1118_PGA_256 | ADS1118_MODE_SINGLE | ADS1118_DR_860SPS | ADS1118_TS_MODE_ADC | ADS1118_NOP)
+        config_bytes = struct.pack('>H', config)
+
+        self.cs.value(0)
+        self.spi.write(config_bytes)
+        self.cs.value(1)
+
+        time.sleep_ms(2) # Wait for conversion
+
+        result = bytearray(2)
+        self.cs.value(0)
+        self.spi.write_readinto(config_bytes, result)
+        self.cs.value(1)
+
+        raw_value = struct.unpack('>h', result)[0]
+        voltage = raw_value * 0.256 / 32768.0
+        return voltage
