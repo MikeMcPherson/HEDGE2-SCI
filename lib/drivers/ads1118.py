@@ -33,16 +33,35 @@ class ADS1118:
         config = (ADS1118_SS | mux | ADS1118_PGA_256 | ADS1118_MODE_SINGLE | ADS1118_DR_860SPS | ADS1118_TS_MODE_ADC | ADS1118_NOP)
         config_bytes = struct.pack('>H', config)
 
+        # ----------------------------------------------------------------------
+        # FIX: Implement a two-conversion sequence for clean MUX switching
+        # ----------------------------------------------------------------------
+        
+        # 1. Start the first conversion (allows MUX to settle)
         self.cs.value(0)
         self.spi.write(config_bytes)
         self.cs.value(1)
 
-        time.sleep_ms(2) # Wait for conversion
+        time.sleep_ms(20) # Wait for conversion 1 to finish
 
+        # 2. Read result of Conversion 1 (Transitional/Corrupted) and start Conversion 2 (Clean)
+        # The result is read into a dummy bytearray and discarded.
+        dummy_result = bytearray(2)
+        self.cs.value(0)
+        self.spi.write_readinto(config_bytes, dummy_result)
+        self.cs.value(1)
+
+        time.sleep_ms(20) # Wait for conversion 2 to finish
+
+        # 3. Read result of Conversion 2 (Clean/Final Result) and start Conversion 3 (Ignored)
         result = bytearray(2)
         self.cs.value(0)
         self.spi.write_readinto(config_bytes, result)
         self.cs.value(1)
+        
+        # ----------------------------------------------------------------------
+        # End Fix
+        # ----------------------------------------------------------------------
 
         # Convert to signed 16-bit integer
         raw_value = struct.unpack('>h', result)[0]
@@ -77,17 +96,39 @@ class ADS1118:
         config = (ADS1118_SS | mux | ADS1118_PGA_256 | ADS1118_MODE_SINGLE | ADS1118_DR_860SPS | ADS1118_TS_MODE_ADC | ADS1118_NOP)
         config_bytes = struct.pack('>H', config)
 
+        # ----------------------------------------------------------------------
+        # FIX: Implement a two-conversion sequence for clean MUX switching
+        # ----------------------------------------------------------------------
+
+        # 1. Start the first conversion (allows MUX to settle after channel switch)
         self.cs.value(0)
         self.spi.write(config_bytes)
         self.cs.value(1)
 
-        time.sleep_ms(2) # Wait for conversion
+        time.sleep_ms(20) # Wait for conversion 1 to finish (using 20ms delay)
 
+        # 2. Read result of Conversion 1 (Transitional/Corrupted) and start Conversion 2 (Clean)
+        # The result is read into a dummy bytearray and discarded.
+        dummy_result = bytearray(2)
+        self.cs.value(0)
+        self.spi.write_readinto(config_bytes, dummy_result)
+        self.cs.value(1)
+
+        time.sleep_ms(20) # Wait for conversion 2 to finish
+
+        # 3. Read result of Conversion 2 (Clean/Final Result) and start Conversion 3 (Ignored)
         result = bytearray(2)
         self.cs.value(0)
         self.spi.write_readinto(config_bytes, result)
         self.cs.value(1)
 
+        # ----------------------------------------------------------------------
+        # End Fix
+        # ----------------------------------------------------------------------
+
+        # Convert to signed 16-bit integer
         raw_value = struct.unpack('>h', result)[0]
+
+        # Convert to voltage
         voltage = raw_value * 0.256 / 32768.0
         return voltage
