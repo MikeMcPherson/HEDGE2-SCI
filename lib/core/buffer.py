@@ -4,6 +4,14 @@ import time
 import struct
 
 
+def pad_list(values, length, fill=0.0):
+    if values is None:
+        return [fill] * length
+    if len(values) >= length:
+        return values[:length]
+    return values + [fill] * (length - len(values))
+
+
 class Buffer:
     def __init__(self, capacity=120):
         self.capacity = capacity
@@ -16,13 +24,13 @@ class Buffer:
         if timestamp is None:
             timestamp = time.ticks_ms() & 0xFFFFFFFF
 
-        temperatures = temperatures or [0.0, 0.0, 0.0, 0.0]
-        pressures = pressures or [0.0, 0.0, 0.0, 0.0]
-        hk_temps = hk_temps or [0.0, 0.0, 0.0, 0.0]
-        hk_voltages = hk_voltages or [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        hk_currents = hk_currents or [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        hk_powers = hk_powers or [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        hk_ina_temps = hk_ina_temps or [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        temperatures = pad_list(temperatures, 4)
+        pressures = pad_list(pressures, 4)
+        hk_temps = pad_list(hk_temps, 4)
+        hk_voltages = pad_list(hk_voltages, 6)
+        hk_currents = pad_list(hk_currents, 6)
+        hk_powers = pad_list(hk_powers, 6)
+        hk_ina_temps = pad_list(hk_ina_temps, 6)
 
         # Struct format: timestamp + (4 temps + 4 pressures) + (4T + 6V + 6I + 6P + 6INAT)
         fmt = "<I4f4f4f6f6f6f6f"  # = 1 uint32 + 36 floats total
